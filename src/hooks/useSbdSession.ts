@@ -81,11 +81,15 @@ export function useSbdSession() {
   }, []);
 
   useEffect(() => {
-    if (session.screenId !== 'SBD-010') return;
+    if (session.screenId !== 'SBD-010' || !session.deviceStatus.receiptPrinted) {
+      return;
+    }
 
     const timer = setInterval(() => {
       setSession((prev) => {
-        if (prev.screenId !== 'SBD-010') return prev;
+        if (prev.screenId !== 'SBD-010' || !prev.deviceStatus.receiptPrinted) {
+          return prev;
+        }
         if (prev.countdownSeconds <= 1) {
           simulateReset().catch(() => {});
           return { ...prev, screenId: 'SBD-001', countdownSeconds: 30 };
@@ -95,7 +99,7 @@ export function useSbdSession() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [session.screenId]);
+  }, [session.screenId, session.deviceStatus.receiptPrinted]);
 
   const dispatchAction = useCallback(async (action: KioskActionType) => {
     try {

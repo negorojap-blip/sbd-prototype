@@ -136,6 +136,7 @@ export function createSbdApiMiddleware() {
   let verifyTimer: ReturnType<typeof setTimeout> | null = null;
   let paymentTimer: ReturnType<typeof setTimeout> | null = null;
   let conveyTimer: ReturnType<typeof setTimeout> | null = null;
+  let receiptTimer: ReturnType<typeof setTimeout> | null = null;
   let returnTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearTimers() {
@@ -150,6 +151,10 @@ export function createSbdApiMiddleware() {
     if (conveyTimer) {
       clearTimeout(conveyTimer);
       conveyTimer = null;
+    }
+    if (receiptTimer) {
+      clearTimeout(receiptTimer);
+      receiptTimer = null;
     }
     if (returnTimer) {
       clearTimeout(returnTimer);
@@ -195,23 +200,40 @@ export function createSbdApiMiddleware() {
     }, delayMs);
   }
 
+  function startReceiptPrintingSequence(printDurationMs = 5000) {
+    if (receiptTimer) clearTimeout(receiptTimer);
+    const activeSessionId = state.sessionId;
+    state.deviceStatus.conveying = false;
+    state.deviceStatus.receiptPrinted = false;
+    state.simulatorState = 'completed';
+    state.screenId = 'SBD-010';
+    state.countdownSeconds = 30;
+
+    receiptTimer = setTimeout(() => {
+      if (state.sessionId !== activeSessionId) return;
+      if (state.screenId === 'SBD-010') {
+        state.deviceStatus.receiptPrinted = true;
+        state.countdownSeconds = 30;
+        broadcastState();
+      }
+    }, printDurationMs);
+  }
+
   function startConveyingSequence(conveyDurationMs = 5000) {
     if (conveyTimer) clearTimeout(conveyTimer);
+    if (receiptTimer) clearTimeout(receiptTimer);
     if (returnTimer) clearTimeout(returnTimer);
     const activeSessionId = state.sessionId;
     state.heavyTagWarningOpen = false;
     state.deviceStatus.conveying = true;
+    state.deviceStatus.receiptPrinted = false;
     state.simulatorState = 'conveying';
     state.screenId = 'SBD-009';
 
     conveyTimer = setTimeout(() => {
       if (state.sessionId !== activeSessionId) return;
       if (state.screenId === 'SBD-009' || state.simulatorState === 'conveying') {
-        state.deviceStatus.conveying = false;
-        state.deviceStatus.receiptPrinted = true;
-        state.simulatorState = 'completed';
-        state.screenId = 'SBD-010';
-        state.countdownSeconds = 30;
+        startReceiptPrintingSequence(5000);
         broadcastState();
       }
     }, conveyDurationMs);
@@ -566,11 +588,7 @@ export function createSbdApiMiddleware() {
     // POST /api/device/convey-complete
     if (req.method === 'POST' && url === '/api/device/convey-complete') {
       if (conveyTimer) clearTimeout(conveyTimer);
-      state.deviceStatus.conveying = false;
-      state.deviceStatus.receiptPrinted = true;
-      state.simulatorState = 'completed';
-      state.screenId = 'SBD-010';
-      state.countdownSeconds = 30;
+      startReceiptPrintingSequence(5000);
       broadcastState();
       return sendJson(res, 200, state);
     }
@@ -604,8 +622,7 @@ export function createSbdApiMiddleware() {
         } else if (body.screenId === 'SBD-009') {
           startConveyingSequence(5000);
         } else if (body.screenId === 'SBD-010') {
-          state.simulatorState = 'completed';
-          state.countdownSeconds = 30;
+          startReceiptPrintingSequence(5000);
         }
       }
       if (typeof body.cancelModalOpen === 'boolean') {

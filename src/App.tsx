@@ -96,6 +96,7 @@ const SbdKioskApp: React.FC = () => {
         return (
           <Sbd010Complete
             language={language}
+            receiptPrinted={Boolean(deviceStatus.receiptPrinted)}
             countdownSeconds={countdownSeconds}
             onAddAnotherBag={() => dispatchAction('ADD_ANOTHER_BAG')}
             onExtendTime={() => dispatchAction('EXTEND_TIME')}

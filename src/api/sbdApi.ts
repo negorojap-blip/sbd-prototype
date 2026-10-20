@@ -14,6 +14,7 @@ let sessionCounter = 1;
 let verifyTimer: ReturnType<typeof setTimeout> | null = null;
 let paymentTimer: ReturnType<typeof setTimeout> | null = null;
 let conveyTimer: ReturnType<typeof setTimeout> | null = null;
+let receiptTimer: ReturnType<typeof setTimeout> | null = null;
 let returnTimer: ReturnType<typeof setTimeout> | null = null;
 
 const listeners = new Set<(state: SbdSessionState) => void>();
@@ -116,6 +117,10 @@ function clearLocalTimers() {
     clearTimeout(conveyTimer);
     conveyTimer = null;
   }
+  if (receiptTimer) {
+    clearTimeout(receiptTimer);
+    receiptTimer = null;
+  }
   if (returnTimer) {
     clearTimeout(returnTimer);
     returnTimer = null;
@@ -215,15 +220,40 @@ function applyLocalWeightKg(state: SbdSessionState, weightKg: number) {
   state.baggageInfo.extraFeeYen = weightKg > 20.0 ? 3000 : 0;
 }
 
+function startLocalReceiptPrintingSequence(
+  state: SbdSessionState,
+  printDurationMs = 5000
+) {
+  if (receiptTimer) clearTimeout(receiptTimer);
+  const activeSessionId = state.sessionId;
+  state.deviceStatus.conveying = false;
+  state.deviceStatus.receiptPrinted = false;
+  state.simulatorState = 'completed';
+  state.screenId = 'SBD-010';
+  state.countdownSeconds = 30;
+
+  receiptTimer = setTimeout(() => {
+    const current = getLocalSharedState();
+    if (current.sessionId !== activeSessionId) return;
+    if (current.screenId === 'SBD-010') {
+      current.deviceStatus.receiptPrinted = true;
+      current.countdownSeconds = 30;
+      saveLocalSharedState(current, true);
+    }
+  }, printDurationMs);
+}
+
 function startLocalConveyingSequence(
   state: SbdSessionState,
   conveyDurationMs = 5000
 ) {
   if (conveyTimer) clearTimeout(conveyTimer);
+  if (receiptTimer) clearTimeout(receiptTimer);
   if (returnTimer) clearTimeout(returnTimer);
   const activeSessionId = state.sessionId;
   state.heavyTagWarningOpen = false;
   state.deviceStatus.conveying = true;
+  state.deviceStatus.receiptPrinted = false;
   state.simulatorState = 'conveying';
   state.screenId = 'SBD-009';
 
@@ -234,11 +264,7 @@ function startLocalConveyingSequence(
       current.screenId === 'SBD-009' ||
       current.simulatorState === 'conveying'
     ) {
-      current.deviceStatus.conveying = false;
-      current.deviceStatus.receiptPrinted = true;
-      current.simulatorState = 'completed';
-      current.screenId = 'SBD-010';
-      current.countdownSeconds = 30;
+      startLocalReceiptPrintingSequence(current, 5000);
       saveLocalSharedState(current, true);
     }
   }, conveyDurationMs);
@@ -633,11 +659,7 @@ export async function simulateConveyComplete(): Promise<SbdSessionState> {
 
   if (conveyTimer) clearTimeout(conveyTimer);
   const state = getLocalSharedState();
-  state.deviceStatus.conveying = false;
-  state.deviceStatus.receiptPrinted = true;
-  state.simulatorState = 'completed';
-  state.screenId = 'SBD-010';
-  state.countdownSeconds = 30;
+  startLocalReceiptPrintingSequence(state, 5000);
   return saveLocalSharedState(state, true);
 }
 
@@ -679,8 +701,7 @@ export async function simulateGotoScreen(
   } else if (screenId === 'SBD-009') {
     startLocalConveyingSequence(state, 5000);
   } else if (screenId === 'SBD-010') {
-    state.simulatorState = 'completed';
-    state.countdownSeconds = 30;
+    startLocalReceiptPrintingSequence(state, 5000);
   }
   return saveLocalSharedState(state, true);
 }
